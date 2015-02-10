@@ -41,6 +41,8 @@ function toolbook_importhtml_import_chapters($package, $type, $book, $context, $
 
     $fs = get_file_storage();
     $chapterfiles = toolbook_importhtml_get_chapter_files($package, $type);
+    $fileOrder = get_pathname_order( $package, $type );
+
     $packer = get_file_packer('application/zip');
     $fs->delete_area_files($context->id, 'mod_book', 'importhtmltemp', 0);
     $package->extract_to_storage($packer, $context->id, 'mod_book', 'importhtmltemp', 0, '/');
@@ -60,7 +62,10 @@ function toolbook_importhtml_import_chapters($package, $type, $book, $context, $
             // TODO: process h1 as main chapter and h2 as subchapters
         }
     } else {
-        foreach ($chapterfiles as $chapterfile) {
+ #       foreach ($chapterfiles as $chapterfile) {
+         foreach ( $fileOrder as $path ) {
+            $chapterfile = $chapterfiles[$path];
+
             if ($file = $fs->get_file_by_hash(sha1("/$context->id/mod_book/importhtmltemp/0/$chapterfile->pathname"))) {
                 $chapter = new stdClass();
                 $htmlcontent = toolbook_importhtml_fix_encoding($file->get_content());
@@ -75,8 +80,23 @@ function toolbook_importhtml_import_chapters($package, $type, $book, $context, $
                 $chapter->hidden        = 0;
                 $chapter->timecreated   = time();
                 $chapter->timemodified  = time();
+
+                #-- remove .html extension from chapter name shown to reader
+                if ( preg_match( "/\.html$/", $chapter->title ) ) {
+                    $chapter->title = preg_replace( "/\.html$/", "", $chapter->title );
+                }
+                #-- remove filenames from a path
+                if ( preg_match( "/^(.*)\/[^\/]*$/", $chapter->title ) ) {
+                     print "file name includes folder " . $chapter->title . "<br />";
+                     $chapter->title = preg_replace( "/^(.*)\/[^\/]*$/", "$1", $chapter->title );
+                }
+
                 if (preg_match('/_sub(\/|\.htm)/i', $chapter->importsrc)) { // If filename or directory ends with *_sub treat as subchapters
                     $chapter->subchapter = 1;
+                    #-- remove the _sub from the chapter name
+                    if ( preg_match( "/_sub$/", $chapter->title ) ) {
+                        $chapter->title = preg_replace( "/_sub$/", "", $chapter->title );
+                    }
                 } else {
                     $chapter->subchapter = 0;
                 }
@@ -344,3 +364,30 @@ function toolbook_importhtml_get_chapter_files($package, $type) {
 
     return $chapterfiles;
 }
+
+/**********
+ * - Returns pathnames for all html files (chapters) from a file package
+ *   in the same order as they appear in the zip file
+ *
+ * @param stored_file $package file to be processed
+ * @param srting $type type of package ('typezipdirs' or 'typezipfiles')
+ */
+
+function get_pathname_order( $package, $type ) {
+    $packer = get_file_packer('application/zip');
+    $files = $package->list_files($packer);
+
+    $count=0;
+    $order = array();
+    foreach ($files as $file) {
+        #**** TODO Handle the zipdirs format ****/
+        if (empty($file->pathname)) {
+            continue;
+        }
+        $order[$count] = $file->pathname;
+        $count++;
+    }
+
+    return $order;
+}
+
